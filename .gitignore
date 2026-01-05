@@ -10,3 +10,5 @@
 *.pdf
 *.docx
 *.xlsx
+
+/.claude/
