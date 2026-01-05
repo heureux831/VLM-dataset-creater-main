@@ -1,0 +1,12 @@
+
+/data/*
+
+/testing_data_example/*
+
+/testing_data_example/annotations/*
+
+/testing_data_example/images/*
+
+*.pdf
+*.docx
+*.xlsx
