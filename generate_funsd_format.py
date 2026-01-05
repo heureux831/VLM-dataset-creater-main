@@ -16,8 +16,13 @@ from pathlib import Path
 from PIL import Image
 import cv2
 import numpy as np
-from google import genai
-from google.genai import types
+try:
+    import google.generativeai as genai
+except ImportError:
+    try:
+        import google.genai as genai
+    except ImportError:
+        genai = None
 from config import BILL_OF_LADING_LABELS, DEFAULT_CONFIG
 
 # FUNSD格式的标签映射
@@ -166,85 +171,6 @@ def ocr_with_paddle(image_path):
         print(f"❌ OCR识别失败: {str(e)}")
         return []
 
-def ocr_with_babeldoc(image_path):
-    """
-    使用BabelDOC提取图像中的文本和坐标（备用方法）
-
-    Args:
-        image_path: 图像文件路径
-
-    Returns:
-        list: 包含文本和坐标的列表
-    """
-    try:
-        import pymupdf
-        from babeldoc.document_il.utils.layout_helper import get_char_unicode_string
-
-        # 打开图像并转换为PDF
-        doc = pymupdf.open()
-        img = Image.open(image_path)
-        img_rect = pymupdf.Rect(0, 0, img.width, img.height)
-        page = doc.new_page(width=img.width, height=img.height)
-        page.insert_image(img_rect, filename=image_path)
-
-        # 使用BabelDOC处理
-        from babeldoc.high_level import ILCreater, TranslationConfig
-        from babeldoc.docvision import doclayout
-        from babeldoc.document_il.midend.layout_parser import LayoutParser
-        from babeldoc.document_il.midend.paragraph_finder import ParagraphFinder
-        from babeldoc.docvision.table_detection.rapidocr import RapidOCRModel
-
-        onnx = doclayout.DocLayoutModel.load_available()
-        translation_config = TranslationConfig(
-            *[None for _ in range(4)],
-            doc_layout_model=onnx,
-            table_model=RapidOCRModel(),
-        )
-
-        il_creater = ILCreater(translation_config)
-        with open(image_path, "rb") as f:
-            from babeldoc.high_level import start_parse_il
-            start_parse_il(
-                f,
-                doc_zh=doc,
-                resfont="test_font",
-                il_creater=il_creater,
-                translation_config=translation_config,
-            )
-
-        il = il_creater.create_il()
-        LayoutParser(translation_config).process(il, doc)
-        ParagraphFinder(translation_config).process(il)
-
-        ocr_results = []
-        for page in il.page:
-            for paragraph in page.pdf_paragraph:
-                for comp in paragraph.pdf_paragraph_composition:
-                    if comp.pdf_line:
-                        line = comp.pdf_line
-                        text = get_char_unicode_string(line.pdf_character)
-
-                        # 获取边界框
-                        box = line.box
-                        # 转换为绝对坐标
-                        x_min = int(box.x)
-                        y_min = int(box.y)
-                        x_max = int(box.x2)
-                        y_max = int(box.y2)
-
-                        ocr_results.append({
-                            "id": len(ocr_results),
-                            "text": text,
-                            "box": [x_min, y_min, x_max, y_max],
-                            "confidence": 1.0
-                        })
-
-        doc.close()
-        return ocr_results
-
-    except Exception as e:
-        print(f"❌ BabelDOC OCR失败: {str(e)}")
-        return []
 
 def classify_with_gemini(ocr_results):
     """
@@ -260,7 +186,17 @@ def classify_with_gemini(ocr_results):
         return {}
 
     try:
-        client = genai.Client(api_key=DEFAULT_CONFIG["api_key"])
+        # 检查 genai 是否可用
+        if genai is None:
+            print("❌ Google Generative AI 库未安装")
+            print("   请运行: pip install google-ai-generativelanguage google-auth google-auth-oauthlib google-auth-httplib2")
+            return {}
+
+        # 检查 API 密钥
+        api_key = DEFAULT_CONFIG.get("api_key", "")
+        if not api_key or api_key == "YOUR_API_KEY":
+            print("❌ 请在config.py中配置Gemini API密钥")
+            return {}
 
         # 构建输入数据
         input_data = []
@@ -270,14 +206,32 @@ def classify_with_gemini(ocr_results):
                 "text": result["text"]
             })
 
-        # 发送请求
-        response = client.models.generate_content(
-            model=DEFAULT_CONFIG["model_name"],
-            contents=[json.dumps(input_data, ensure_ascii=False), FUNSD_CLASSIFICATION_PROMPT],
-        )
+        # 尝试新版本API (google.genai)
+        try:
+            import google.generativeai as genai_new
+            genai_new.configure(api_key=api_key)
+            model = genai_new.GenerativeModel(DEFAULT_CONFIG["model_name"])
+            response = model.generate_content(
+                json.dumps(input_data, ensure_ascii=False) + "\n\n" + FUNSD_CLASSIFICATION_PROMPT,
+                generation_config={"timeout": 60}
+            )
+        except (AttributeError, ImportError):
+            # 尝试旧版本API (google.generativeai)
+            try:
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel(DEFAULT_CONFIG["model_name"])
+                response = model.generate_content(
+                    json.dumps(input_data, ensure_ascii=False) + "\n\n" + FUNSD_CLASSIFICATION_PROMPT
+                )
+            except Exception as e:
+                print(f"  ❌ Gemini API调用失败: {str(e)}")
+                return {}
 
         # 解析响应
-        result_text = response.text.strip()
+        if hasattr(response, 'text'):
+            result_text = response.text.strip()
+        else:
+            result_text = str(response).strip()
 
         # 去除可能的markdown标记
         if result_text.startswith('```json'):
@@ -294,6 +248,8 @@ def classify_with_gemini(ocr_results):
 
     except Exception as e:
         print(f"❌ Gemini分类失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {}
 
 def split_text_to_words(text, box):
@@ -397,10 +353,6 @@ def process_single_image(image_path, output_dir):
         ocr_results = ocr_with_paddle(image_path)
 
         if not ocr_results:
-            print("  ⚠️  OCR未识别到文本，尝试使用BabelDOC...")
-            ocr_results = ocr_with_babeldoc(image_path)
-
-        if not ocr_results:
             print("  ❌ OCR识别失败")
             return False
 
@@ -435,6 +387,44 @@ def process_single_image(image_path, output_dir):
         import traceback
         traceback.print_exc()
         return False
+
+class ImageToFUNSDConverter:
+    """图像转FUNSD格式转换器"""
+
+    def __init__(self):
+        """初始化转换器"""
+        pass
+
+    def convert_image_to_funsd(self, image_path, output_name):
+        """
+        将图像转换为FUNSD格式
+
+        Args:
+            image_path: 图像文件路径
+            output_name: 输出名称（不包含扩展名）
+
+        Returns:
+            dict: FUNSD格式的数据
+        """
+        # 1. OCR识别
+        ocr_results = ocr_with_paddle(image_path)
+
+        if not ocr_results:
+            print(f"  ❌ OCR识别失败: {image_path}")
+            return {"form": []}
+
+        # 2. Gemini分类
+        classification = classify_with_gemini(ocr_results)
+
+        if not classification:
+            print(f"  ❌ 语义分类失败: {image_path}")
+            return {"form": []}
+
+        # 3. 生成FUNSD格式
+        funsd_data = generate_funsd_format(image_path, ocr_results, classification)
+
+        return funsd_data
+
 
 def main():
     """主函数"""

@@ -111,15 +111,13 @@ def main():
     print("="*60)
     print("请选择处理方式:")
     print("1. 多格式文档处理 (推荐，支持PDF/Excel/Word)")
-    print("2. 仅PDF文档处理")
-    print("3. 分步处理（传统流程）")
+    print("2. 分步处理（传统流程）")
 
-    choice = input("\n请选择 (1/2/3，默认: 1): ").strip()
+    choice = input("\n请选择 (1/2，默认: 1): ").strip()
 
-    if choice == "3":
+    if choice == "2":
         # 传统分步流程
         steps = [
-            ("extract_paragraph_bol.py", "提取海运单文本框"),
             ("vlm_anno_bol.py", "第一次VLM标注（文本分组）"),
             ("correct_format_bol.py", "校正格式"),
             ("correct_box_bol.py", "校正边界框"),
@@ -127,12 +125,6 @@ def main():
             ("convert_label_bol.py", "转换标签格式"),
         ]
         print("\n已选择分步处理流程")
-    elif choice == "2":
-        # 仅PDF处理
-        steps = [
-            ("pdf_to_funsd.py", "从PDF生成FUNSD格式"),
-        ]
-        print("\n已选择仅PDF文档处理")
     else:
         # 多格式文档处理（推荐）
         steps = [

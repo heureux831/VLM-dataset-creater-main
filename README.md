@@ -63,36 +63,16 @@
 
 ### 步骤详解
 
-#### 第1步：文件转图片（PDF转换）
-**脚本**: `pdf_to_funsd.py`
-
-**功能说明**:
-- 将PDF文档转换为图像
-- 为OCR识别做准备
-- 支持多页处理
-
-**关键代码**:
-```python
-# 使用PyMuPDF将PDF转换为图像
-import pymupdf
-
-doc = pymupdf.open(pdf_path)
-page = doc[0]  # 获取第一页
-pixmap = page.get_pixmap(dpi=300)
-image = pixmap.tobytes("png")
-```
-
-**输出**: 图像文件，用于OCR识别
-
-#### 第2步：图片OCR（文本识别）
-**脚本**: `generate_funsd_format.py` 和 `pdf_to_funsd.py`
+#### 第1步：文档OCR（文本识别）
+**脚本**: `generate_funsd_format.py` 和 `multi_format_to_funsd.py`
 
 **功能说明**:
 - **引擎**: PaddleOCR
-  - 提取图像中的文本和精确边界框
+  - 直接从PDF、Excel、Word等格式提取文本和精确边界框
   - 支持多语言识别
   - 自动文本分词
   - 高精度文本检测
+  - 多格式文档自动转换和解析
 
 **关键代码**:
 ```python
@@ -110,8 +90,8 @@ for line in result[0]:
 
 **输出**: OCR结果列表，包含文本内容、边界框坐标、置信度
 
-#### 第3步：Gemini标注（语义分类）
-**脚本**: `vlm_anno_bol.py`、`vlm_anno2_bol.py`、`pdf_to_funsd.py`、`generate_funsd_format.py`
+#### 第2步：Gemini标注（语义分类）
+**脚本**: `vlm_anno_bol.py`、`vlm_anno2_bol.py`、`generate_funsd_format.py`、`multi_format_to_funsd.py`
 
 **功能说明**:
 - 使用Gemini 2.0 Flash对文本进行语义分类
@@ -145,8 +125,8 @@ prompt = """
 
 **输出**: 文本ID到类别ID的映射字典
 
-#### 第4步：汇总为FUNSD（格式转换）
-**脚本**: `pdf_to_funsd.py`、`generate_funsd_format.py`、`convert_label_bol.py`
+#### 第3步：汇总为FUNSD（格式转换）
+**脚本**: `generate_funsd_format.py`、`multi_format_to_funsd.py`、`convert_label_bol.py`
 
 **功能说明**:
 - 将OCR坐标和Gemini分类结果整合
@@ -183,9 +163,9 @@ def generate_funsd_format(ocr_results, classification):
 
 | 脚本名称 | 功能 | 适用场景 | 输出格式 |
 |---------|------|----------|----------|
-| **pdf_to_funsd.py** | 直接从PDF生成FUNSD | 推荐使用，最简单 | JSON |
+| **multi_format_to_funsd.py** | 多格式文档生成FUNSD | 推荐使用，最简单 | JSON |
 | **generate_funsd_format.py** | 从图像生成FUNSD | 处理已有图像文件 | JSON |
-| **extract_paragraph_bol.py** | PDF文本框提取 | 分步处理第一步 | 文本框坐标 |
+| **document_parser.py** | 多格式文档解析器 | 支持PDF/Excel/Word | 统一格式 |
 | **vlm_anno_bol.py** | VLM文本分组 | 分步处理第二步 | 分组结果 |
 | **vlm_anno2_bol.py** | VLM关键字分类 | 分步处理第五步 | 分类结果 |
 | **convert_label_bol.py** | 标签格式转换 | 分步处理第六步 | 标签文件 |
@@ -427,26 +407,23 @@ pip install opencv-python
 ### 方式三：分步处理（高级用户）
 
 ```bash
-# 步骤1: 提取文本框
-python extract_paragraph_bol.py
-
-# 步骤2: 第一次VLM标注（文本分组）
+# 步骤1: 第一次VLM标注（文本分组）
 python vlm_anno_bol.py
 
-# 步骤3: 校正格式
+# 步骤2: 校正格式
 python correct_format_bol.py
 
-# 步骤4: 校正边界框
+# 步骤3: 校正边界框
 python correct_box_bol.py
 
-# 步骤5: 第二次VLM标注（关键字分类）
+# 步骤4: 第二次VLM标注（关键字分类）
 python vlm_anno2_bol.py
 
-# 步骤6: 转换标签格式
+# 步骤5: 转换标签格式
 python convert_label_bol.py
 
-# 步骤7: 生成FUNSD格式
-python pdf_to_funsd.py
+# 步骤6: 生成FUNSD格式
+python generate_funsd_format.py
 ```
 
 ## 🔄 工作流程
@@ -460,8 +437,6 @@ python pdf_to_funsd.py
 详细流程：
 ```
 PDF文档
-  ↓ (extract_paragraph_bol.py)
-文本块 + 坐标
   ↓ (vlm_anno_bol.py)
 语义分组结果
   ↓ (correct_format_bol.py + correct_box_bol.py)
@@ -470,7 +445,7 @@ PDF文档
 分类标签
   ↓ (convert_label_bol.py)
 标签文件
-  ↓ (pdf_to_funsd.py)
+  ↓ (generate_funsd_format.py)
 FUNSD JSON格式
 ```
 
@@ -488,10 +463,8 @@ FUNSD JSON格式
 │
 ├── 核心处理脚本/
 │   ├── multi_format_to_funsd.py   # 多格式文档转FUNSD（推荐）
-│   ├── pdf_to_funsd.py            # PDF转FUNSD格式
 │   ├── generate_funsd_format.py   # 图像转FUNSD格式
 │   ├── document_parser.py         # 多格式文档解析器
-│   ├── extract_paragraph_bol.py   # PDF文本框提取
 │   ├── vlm_anno_bol.py            # 第一次VLM标注（文本分组）
 │   ├── vlm_anno2_bol.py           # 第二次VLM标注（关键字分类）
 │   ├── convert_label_bol.py       # 标签格式转换
@@ -891,26 +864,23 @@ python run_all_bol.py
 **方式二：分步运行**
 
 ```bash
-# 步骤1: 提取文本框
-python extract_paragraph_bol.py
-
-# 步骤2: 第一次VLM标注（文本分组）
+# 步骤1: 第一次VLM标注（文本分组）
 python vlm_anno_bol.py
 
-# 步骤3: 校正格式
+# 步骤2: 校正格式
 python correct_format_bol.py
 
-# 步骤4: 校正边界框
+# 步骤3: 校正边界框
 python correct_box_bol.py
 
-# 步骤5: 第二次VLM标注（关键字分类）
+# 步骤4: 第二次VLM标注（关键字分类）
 python vlm_anno2_bol.py
 
-# 步骤6: 转换标签格式
+# 步骤5: 转换标签格式
 python convert_label_bol.py
 
-# 步骤7: 生成FUNSD格式
-python pdf_to_funsd.py
+# 步骤6: 生成FUNSD格式
+python generate_funsd_format.py
 ```
 
 ### 新增功能
@@ -1024,22 +994,22 @@ python generate_funsd_format.py
 - 批量处理多张图像
 - 高精度文本检测
 
-#### 2. 从PDF生成FUNSD格式
+#### 2. 多格式文档生成FUNSD格式
 
-**脚本**: `pdf_to_funsd.py`
+**脚本**: `multi_format_to_funsd.py`
 
 ```bash
-python pdf_to_funsd.py
+python multi_format_to_funsd.py
 ```
 
-**输入**: PDF文件
+**输入**: PDF、Excel、Word文件
 **输出**: FUNSD格式JSON文件
 
 **特点**:
-- 将PDF转换为图像
+- 支持多种文档格式
 - 使用PaddleOCR提取文本
-- 适合处理大量PDF文档
-- 支持多页处理
+- 适合处理大量文档
+- 自动格式识别和转换
 
 ### 标签映射
 
@@ -1057,22 +1027,34 @@ python pdf_to_funsd.py
 
 ### 处理流程详解
 
-#### 1. PDF处理（pdf_to_funsd.py）
+#### 1. 多格式文档处理（multi_format_to_funsd.py）
 
 ```python
-# 1. 解析PDF
-il = parse_pdf(pdf_path)
+# 1. 自动识别文档格式
+doc_type = detect_document_type(file_path)
 
-# 2. 提取文本块
-text_blocks = extract_text_blocks(pdf_path)
+# 2. 转换为统一格式
+if doc_type == "pdf":
+    # PDF转图像
+    images = pdf_to_images(pdf_path)
+elif doc_type == "excel":
+    # Excel转图像
+    images = excel_to_images(excel_path)
+elif doc_type == "word":
+    # Word转图像
+    images = word_to_images(word_path)
 
-# 3. Gemini分类
-classification = classify_with_gemini(text_blocks)
+# 3. 批量OCR识别
+for image in images:
+    ocr_results = ocr_with_paddle(image)
 
-# 4. 生成FUNSD格式
-funsd_data = generate_funsd_format(text_blocks, classification)
+# 4. Gemini分类
+classification = classify_with_gemini(ocr_results)
 
-# 5. 保存JSON文件
+# 5. 生成FUNSD格式
+funsd_data = generate_funsd_format(image_path, ocr_results, classification)
+
+# 6. 保存JSON文件
 with open(output_path, 'w') as f:
     json.dump(funsd_data, f)
 ```

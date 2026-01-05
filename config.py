@@ -4,21 +4,66 @@
 Bill of Lading Keyword Recognition - Configuration
 """
 
+import os
+from pathlib import Path
+
+def load_api_key():
+    """
+    从环境变量或 .env 文件加载 API 密钥
+
+    优先级：
+    1. 环境变量 GEMINI_API_KEY
+    2. .env 文件中的 GEMINI_API_KEY
+
+    Returns:
+        str: API 密钥，如果未找到则返回 None
+    """
+    # 首先尝试从环境变量获取
+    api_key = os.getenv('GEMINI_API_KEY')
+    if api_key:
+        return api_key
+
+    # 如果环境变量中没有，尝试从 .env 文件获取
+    try:
+        env_file = Path(__file__).parent / '.env'
+        if env_file.exists():
+            with open(env_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    # 跳过注释和空行
+                    if line and not line.startswith('#'):
+                        if '=' in line:
+                            key, value = line.split('=', 1)
+                            if key.strip() == 'GEMINI_API_KEY':
+                                return value.strip()
+    except Exception as e:
+        print(f"警告：读取 .env 文件时出错: {e}")
+
+    return None
+
 # ==============================================================================
-# ⚠️  首先配置您的API密钥！
+# 🔐  安全配置 API 密钥！
 # ==============================================================================
-# 1. 访问 https://aistudio.google.com/apikey 获取Gemini 2.0 Flash API密钥
-# 2. 将下面的 "YOUR_API_KEY" 替换为您的实际API密钥
-# 3. 保存文件后即可使用
+# 为了避免 API 密钥泄露，请使用以下任一方式配置：
 #
-# 获取API密钥步骤：
-#   - 使用Google账号登录 https://aistudio.google.com/apikey
-#   - 点击 "Create API key"
-#   - 复制生成的API密钥
-#   - 替换下面的 "YOUR_API_KEY"
+# 方式1：环境变量（推荐）
+#   export GEMINI_API_KEY="your-actual-api-key-here"
+#   或者在 ~/.bashrc 或 ~/.zshrc 中添加：
+#   export GEMINI_API_KEY="your-actual-api-key-here"
 #
-# 示例：
-#   "api_key": "AIzaSyC-Your-Actual-API-Key-Here",
+# 方式2：.env 文件（项目根目录）
+#   创建 .env 文件，内容为：
+#   GEMINI_API_KEY=your-actual-api-key-here
+#   ⚠️  .env 文件已添加到 .gitignore，不会被提交到版本控制
+#
+# 获取 API 密钥步骤：
+#   1. 访问 https://aistudio.google.com/apikey
+#   2. 使用 Google 账号登录
+#   3. 点击 "Create API key"
+#   4. 复制生成的 API 密钥
+#
+# 验证配置：
+#   python -c "from config import load_api_key; print('API Key loaded:', 'Yes' if load_api_key() else 'No')"
 # ==============================================================================
 
 # 标签类别定义
@@ -333,25 +378,19 @@ PORT_ABBREVIATIONS = {
 }
 
 # ==============================================================================
-# ⚠️ 重要：请在下面配置您的API密钥
+# ⚙️  默认配置
 # ==============================================================================
-# 找到这一行： "api_key": "YOUR_API_KEY",
-# 将 "YOUR_API_KEY" 替换为您的实际API密钥
-#
-# 例如：
-#   "api_key": "AIzaSyC-Your-Actual-API-Key-Here",
-#
-# 警告：如果不配置API密钥，程序将无法运行！
-# ==============================================================================
+# API 密钥现在通过 load_api_key() 函数自动加载
+# 如果未配置 API 密钥，程序将在启动时提示错误
 
 # 默认配置
 DEFAULT_CONFIG = {
-    "api_key": "YOUR_API_KEY",  # ⚠️  请替换为您的Gemini API密钥
+    "api_key": load_api_key(),  # 🔐 自动从环境变量或 .env 文件加载
     "input_folder": "./bills_of_lading",
     "output_folder": "./bol_output",
     "batch_size": 5,
     "interval": 15,
-    "model_name": "gemini-2.0-flash",
+    "model_name": "gemini-1.5-flash",
     "confidence_threshold": 0.5,
     "nms_threshold": 0.4,
     "image_dpi": 300,
